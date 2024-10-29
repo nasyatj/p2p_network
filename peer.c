@@ -91,11 +91,53 @@ int main(int argc, char **argv){
     udp_sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (udp_sock < 0) {
         error_exit("Failed to create UDP socket");
-        exit(1);
     }
     
     alen = sizeof(sin);
     /*--------------------------------------------------------------------------------------*/
+
+    while(1){
+        //User input
+        printf("Welcome to the P2P network.\n");
+        printf("Please select an option:\n");
+        printf("Enter R to register a file for download.\n"
+        "Enter D to download a file from the server.\n"
+        "Enter S to search for a file.\n"
+        "Enter T to deregister a file.\n"
+        "Enter O to list the files available for download.\n"
+        "Enter Q to quit.\n"
+        );
+
+        char option;
+        option = getchar();
+        printf("Option selected: %c\n", option);
+
+        switch(option){
+            case 'R':
+                //register_content();
+                break;
+            case 'D':
+                //download_content();
+                break;
+            case 'S':
+                //search_content();
+                break;
+            case 'T':
+                //deregister_content();
+                break;
+            case 'O':
+                //list_content();
+                break;
+            case 'Q':
+                printf("Exiting P2P network.\n");
+                exit(0);
+                break;
+            default:
+                printf("Invalid option. Please try again.\n");
+                break;
+        }
+    }
+    
 
     //user input for PDU type
     printf("Enter R to register a file for download:\n"); 
@@ -147,19 +189,18 @@ int main(int argc, char **argv){
     write(udp_sock, &send_pdu, sizeof(send_pdu));
     printf("Sent registration request to index server.\n");
 
-    /*
-    //receive response from index server
-    socklen_t from_len = sizeof(receive_addr);
-    if (recvfrom(udp_sock, &receive_pdu, sizeof(receive_pdu), 0, (struct sockaddr*)&receive_addr, &from_len) < 0) {
-        error_exit("Failed to receive response");
-    }
+    
+    //receive response from index server - possibly change to read
+    //if (recvfrom(udp_sock, &receive_pdu, sizeof(receive_pdu), 0, (struct sockaddr *)&sin, &alen) < 0) {
+    //    error_exit("Failed to receive response");
+    //}
 
     //handle response
-    if (receive_pdu.type == 'A') {
-        printf("Registration successful.\n");
-    } else if (receive_pdu.type == 'E') {
-        printf("Registration failed: Name conflict or error.\n");
-    }
-    */
+    //if (receive_pdu.type == 'A') {
+    //    printf("Registration successful.\n");
+    //} else if (receive_pdu.type == 'E') {
+    //    printf("Registration failed: Name conflict or error.\n");
+    //}
+    
 }
 

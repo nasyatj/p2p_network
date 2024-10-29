@@ -2,13 +2,9 @@
 triple:          'x86_64-apple-darwin'
 binary-path:     '/Users/nasyajames/Desktop/COE768/project/peer'
 relocations:
-  - { offset: 0x26, size: 0x8, addend: 0x0, symName: _getsocketname, symObjAddr: 0x0, symBinAddr: 0x1000005D0, symSize: 0xB0 }
-  - { offset: 0x111, size: 0x8, addend: 0x0, symName: _getsocketname, symObjAddr: 0x0, symBinAddr: 0x1000005D0, symSize: 0xB0 }
-  - { offset: 0x163, size: 0x8, addend: 0x0, symName: _socket, symObjAddr: 0xB0, symBinAddr: 0x100000680, symSize: 0x30 }
-  - { offset: 0x1A7, size: 0x8, addend: 0x0, symName: _bind, symObjAddr: 0xE0, symBinAddr: 0x1000006B0, symSize: 0x30 }
-  - { offset: 0x1EF, size: 0x8, addend: 0x0, symName: __OSSwapInt16, symObjAddr: 0x110, symBinAddr: 0x1000006E0, symSize: 0x20 }
-  - { offset: 0x284, size: 0x8, addend: 0x0, symName: _main, symObjAddr: 0x130, symBinAddr: 0x100000700, symSize: 0x570 }
-  - { offset: 0x444, size: 0x8, addend: 0x0, symName: _connect, symObjAddr: 0x6A0, symBinAddr: 0x100000C70, symSize: 0x30 }
-  - { offset: 0x48C, size: 0x8, addend: 0x0, symName: _send, symObjAddr: 0x6D0, symBinAddr: 0x100000CA0, symSize: 0x40 }
-  - { offset: 0x4E2, size: 0x8, addend: 0x0, symName: _recv, symObjAddr: 0x710, symBinAddr: 0x100000CE0, symSize: 0x46 }
+  - { offset: 0x26, size: 0x8, addend: 0x0, symName: _error_exit, symObjAddr: 0x0, symBinAddr: 0x1000008B0, symSize: 0x20 }
+  - { offset: 0x82, size: 0x8, addend: 0x0, symName: _error_exit, symObjAddr: 0x0, symBinAddr: 0x1000008B0, symSize: 0x20 }
+  - { offset: 0xA6, size: 0x8, addend: 0x0, symName: _getsocketname, symObjAddr: 0x20, symBinAddr: 0x1000008D0, symSize: 0xA0 }
+  - { offset: 0xEA, size: 0x8, addend: 0x0, symName: __OSSwapInt16, symObjAddr: 0xC0, symBinAddr: 0x100000970, symSize: 0x20 }
+  - { offset: 0x112, size: 0x8, addend: 0x0, symName: _main, symObjAddr: 0xE0, symBinAddr: 0x100000990, symSize: 0x3DC }
 ...
