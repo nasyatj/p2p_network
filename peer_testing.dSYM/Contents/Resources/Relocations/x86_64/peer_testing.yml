@@ -1,9 +1,0 @@
----
-triple:          'x86_64-apple-darwin'
-binary-path:     '/Users/nasyajames/Desktop/COE768/project/peer_testing'
-relocations:
-  - { offset: 0x26, size: 0x8, addend: 0x0, symName: _register_file, symObjAddr: 0x0, symBinAddr: 0x100000950, symSize: 0x1F0 }
-  - { offset: 0x41, size: 0x8, addend: 0x0, symName: _register_file, symObjAddr: 0x0, symBinAddr: 0x100000950, symSize: 0x1F0 }
-  - { offset: 0x81, size: 0x8, addend: 0x0, symName: _content_download, symObjAddr: 0x1F0, symBinAddr: 0x100000B40, symSize: 0x10 }
-  - { offset: 0x96, size: 0x8, addend: 0x0, symName: _main, symObjAddr: 0x200, symBinAddr: 0x100000B50, symSize: 0x198 }
-...
