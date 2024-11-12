@@ -219,11 +219,12 @@ int main(int argc, char *argv[])
 				printf("Received sender IP: %s\n", inet_ntoa(sender_addr.sin_addr));
 
 				// Print the raw data for debugging
-				printf("Raw data: ");
-				for (int i = 0; i < sizeof(recv_pdu.data); i++) {
-					printf("%02x ", (unsigned char)recv_pdu.data[i]);
-				}
-				printf("\n");
+				// printf("Raw data: ");
+				// for (int i = 0; i < sizeof(recv_pdu.data); i++) {
+				// 	printf("%02x ", (unsigned char)recv_pdu.data[i]);
+				// }
+				// printf("\n");
+				printf("Raw data: %s\n", recv_pdu.data);
 
 				// Extract the sender file TCP port from recv_pdu.data (assuming it's stored after the file name)
 				uint16_t sender_port;
@@ -253,7 +254,11 @@ int main(int argc, char *argv[])
 					send_pdu.type = 'A';
 					strncpy(send_pdu.data, "File successfully registered", sizeof(send_pdu.data) - 1);
 					send_pdu.data[sizeof(send_pdu.data) - 1] = '\0'; // Ensure null-termination
-					sendto(sock, &send_pdu, sizeof(send_pdu), 0, (struct sockaddr *)&fsin, alen);
+					
+					if(sendto(s, &send_pdu, sizeof(send_pdu), 0, (struct sockaddr *)&fsin, alen) == -1){
+						perror("Failed to send PDU");
+    					exit(1);
+					}
 
 					// Print acknowledgment sent message
     				printf("Acknowledgment sent: File successfully registered\n");

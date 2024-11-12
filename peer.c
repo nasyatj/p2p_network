@@ -19,8 +19,7 @@ struct pdu {
 
 //error function
 void error_exit(const char *msg) {
-    fprintf(stderr, "Error: %s\n", msg);
-    //perror(msg);
+    perror(msg);
     exit(1);
 }
 
@@ -210,44 +209,12 @@ void resetPDUs(struct pdu *send_pdu, struct pdu *receive_pdu){
     memset(receive_pdu->data, 0, sizeof(receive_pdu->data));
 }
 
-int UDP_connect(int port, char *host){
-    struct pdu send_pdu, receive_pdu;
-    struct sockaddr_in sin;
-    struct hostent	*phe;	/* pointer to host information entry	*/
-    int udp_sock;
-
-    /*UDP SOCKET SET UP*/
-    /*--------------------------------------------------------------------------------------*/
-    //clear pdu char arrays
-    resetPDUs(&send_pdu, &receive_pdu);
-    
-    //set up UDP socket for communication with index server
-    memset(&sin, 0, sizeof(sin));
-    sin.sin_family = AF_INET;
-    sin.sin_port = htons(port);
-
-    /* Map host name to IP address, allowing for dotted decimal */
-        if ( phe == gethostbyname(host) ){
-                memcpy(&sin.sin_addr, phe->h_addr, phe->h_length);
-        }
-        else if ( (sin.sin_addr.s_addr = inet_addr(host)) == INADDR_NONE )
-		fprintf(stderr, "Can't get host entry \n");
-
-    udp_sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (udp_sock < 0) {
-        error_exit("Failed to create UDP socket");
-    }
-
-    //connect to UDP socket (for using read and write)
-    if (connect(udp_sock, (struct sockaddr *)&sin, sizeof(sin)) < 0)
-        fprintf(stderr, "Can't connect to %s %s \n", host, "Time");
-    /*--------------------------------------------------------------------------------------*/
-    return udp_sock;
-}
-
 int main(int argc, char **argv){
     int udp_sock, tcp_port, sd;
     struct pdu send_pdu, receive_pdu;
+    struct sockaddr_in sin;
+    int alen = sizeof(sin);
+    struct hostent	*phe;
     int port = 3000;
     char *host = "localhost";
 
@@ -267,12 +234,28 @@ int main(int argc, char **argv){
 		exit(1);
 	}
 
-    // setup UDP socket for communication with the index server
-    udp_sock = UDP_connect(port, host);
+    //UDP Connection
+    /*------------------------------------------------------------------------------*/
+    //clear pdu char arrays
+    resetPDUs(&send_pdu, &receive_pdu);
+    
+    //set up UDP socket for communication with index server
+    memset(&sin, 0, sizeof(sin));
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons(port);
+
+    /* Map host name to IP address, allowing for dotted decimal */
+        if ( phe == gethostbyname(host) ){
+                memcpy(&sin.sin_addr, phe->h_addr, phe->h_length);
+        }
+        else if ( (sin.sin_addr.s_addr = inet_addr(host)) == INADDR_NONE )
+		fprintf(stderr, "Can't get host entry \n");
+
+    udp_sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (udp_sock < 0) {
-        error_exit("Failed to connect to index server");
-        exit(1);
+        error_exit("Failed to create UDP socket");
     }
+    /*------------------------------------------------------------------------------*/
 
     while(1){
         //User input
@@ -313,25 +296,25 @@ int main(int argc, char **argv){
                 register_file(&send_pdu, tcp_port);
                 
                 //send content registration request to index server
-                //if (sendto(udp_sock, &send_pdu, sizeof(send_pdu), 0, (struct sockaddr*)&sin, alen)) {
-                //    error_exit("Failed to send PDU");
-                //} doesnt work for some reason ^^
                 printf("send pdu type: %c\n", send_pdu.type);//testing
                 printf("send pdu data: %s\n", send_pdu.data);//testing
 
-                write(udp_sock, &send_pdu, sizeof(send_pdu));
+                
+                if (sendto(udp_sock, &send_pdu, sizeof(send_pdu), 0, (struct sockaddr*)&sin, alen) == -1) {
+                   error_exit("Failed to send PDU");
+                }
                 printf("Sent registration request to index server.\n");
 
                 
                 //receive response from index server - possibly change to read
-                // if (recvfrom(udp_sock, &receive_pdu, sizeof(receive_pdu), 0, (struct sockaddr *)&sin, &alen) < 0) {
-                //    error_exit("Failed to receive response");
-                // }
-                read(udp_sock, &receive_pdu, sizeof(receive_pdu));
+                if (recvfrom(udp_sock, &receive_pdu, sizeof(receive_pdu), 0, (struct sockaddr *)&sin, &alen) == -1) {
+                   error_exit("Failed to receive response");
+                }
 
-                //handle response
+                // //handle response
                 if (receive_pdu.type == 'A') {
-                   printf("Registration successful.\n");
+                   printf(receive_pdu.data );
+                   printf("\n");
                 } else if (receive_pdu.type == 'E') {
                    printf("Registration failed: Name conflict or error.\n");
                 } else {
