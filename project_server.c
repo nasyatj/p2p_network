@@ -219,11 +219,6 @@ int main(int argc, char *argv[])
 				printf("Received sender IP: %s\n", inet_ntoa(sender_addr.sin_addr));
 
 				// Print the raw data for debugging
-				// printf("Raw data: ");
-				// for (int i = 0; i < sizeof(recv_pdu.data); i++) {
-				// 	printf("%02x ", (unsigned char)recv_pdu.data[i]);
-				// }
-				// printf("\n");
 				printf("Raw data: %s\n", recv_pdu.data);
 
 				// Extract the sender file TCP port from recv_pdu.data (assuming it's stored after the file name)
@@ -340,12 +335,12 @@ int main(int argc, char *argv[])
 			case 'O':
 				// Client is requesting the list of files
 				printf("Client is requesting the list of files\n");
-				print_file_info_list(sock, file_info_list, &fsin, alen);
+				print_file_info_list(s, file_info_list, &fsin, alen);
 				break;
 			default:
 				// Invalid PDU type
 				printf("Error: Invalid PDU type\n");
-				send_error_pdu(sock, &fsin, alen, "Error: Invalid PDU type");
+				send_error_pdu(s, &fsin, alen, "Error: Invalid PDU type");
 				break;
 		}
 	}
