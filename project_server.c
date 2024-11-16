@@ -170,17 +170,17 @@ int main(int argc, char *argv[])
 	sin.sin_family = AF_INET;
 	sin.sin_addr.s_addr = INADDR_ANY;
 	sin.sin_port = htons(port);
-                                                                                                 
-    /* Allocate a socket */
+
+	/* Allocate a socket */
 	s = socket(AF_INET, SOCK_DGRAM, 0);
 	if (s < 0){
 		fprintf(stderr, "can't create socket\n");
 		exit(1);
 	}
-                                                                                
-    /* Bind the socket */
+
+	/* Bind the socket */
 	if (bind(s, (struct sockaddr *)&sin, sizeof(sin)) < 0){
-		fprintf(stderr, "can't bind to %d port\n",port);
+		fprintf(stderr, "can't bind to %d port\n", port);
 		listen(s, 5);	
 	}
 	alen = sizeof(fsin);
@@ -222,12 +222,16 @@ int main(int argc, char *argv[])
 				printf("Raw data: %s\n", recv_pdu.data);
 
 				// Extract the sender file TCP port from recv_pdu.data (assuming it's stored after the file name)
-				uint16_t sender_port;
-				memcpy(&sender_port, recv_pdu.data + 20, sizeof(sender_port));
-				sender_addr.sin_port = sender_port;
+				int sender_port;
+				char port_str[6]; // Assuming the port number is no longer than 5 digits
+				memcpy(port_str, recv_pdu.data + 20, sizeof(port_str) - 1);
+				port_str[5] = '\0'; // Null-terminate the string
+
+				sender_port = atoi(port_str);
+				sender_addr.sin_port = htons(sender_port); // Use htons to convert to network byte order
 
 				// Print the extracted sender port for debugging
-				printf("Received sender port: %u\n", ntohs(sender_port));
+				printf("Received sender port: %u\n", sender_port);
 
 				// Create a new file_info structure
 				struct file_info new_file_info;
@@ -335,12 +339,12 @@ int main(int argc, char *argv[])
 			case 'O':
 				// Client is requesting the list of files
 				printf("Client is requesting the list of files\n");
-				print_file_info_list(s, file_info_list, &fsin, alen);
+				print_file_info_list(sock, file_info_list, &fsin, alen);
 				break;
 			default:
 				// Invalid PDU type
 				printf("Error: Invalid PDU type\n");
-				send_error_pdu(s, &fsin, alen, "Error: Invalid PDU type");
+				send_error_pdu(sock, &fsin, alen, "Error: Invalid PDU type");
 				break;
 		}
 	}
