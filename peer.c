@@ -98,10 +98,14 @@ int handle_client(int sd)
 }
 
 //Register file **DONE
-void register_file(struct pdu *send_pdu, int tcp_sock){
-
+void register_file(struct pdu *send_pdu){
+    int tcp_port, tcp_sock;
     char temp[20];
     send_pdu->type = 'R'; 
+
+    //setup tcp socket for each new file
+    tcp_port = getsocketname(&tcp_sock);
+    printf("TCP port for content hosting: %d\n", tcp_port); //testing
 
     //get peer name
     while (1) {
@@ -137,18 +141,7 @@ void register_file(struct pdu *send_pdu, int tcp_sock){
     }
 
     //assign TCP port to send_pdu.data
-    //printf("Assigned TCP port: %d\n", tcp_sock); //testing
-    snprintf(send_pdu->data + 20, 11, "%-10d", tcp_sock);
-
-    //testing
-    /* //print send_pdu.data
-    //printf("send_pdu.data: %s\n", send_pdu.data);
-    int i;
-    printf("send_pdu.data: ");
-    for(i = 0; i < 30; i++){
-        printf("%c", send_pdu.data[i]);
-    }
-    printf("\n"); */
+    snprintf(send_pdu->data + 20, 11, "%-10d", tcp_port);
 
 }
 
@@ -227,8 +220,7 @@ void receive_download_request(char *host, int port, struct pdu *send_pdu){
 	if (hp = gethostbyname(host)) 
 	  bcopy(hp->h_addr, (char *)&server.sin_addr, hp->h_length);
 	else if ( inet_aton(host, (struct in_addr *) &server.sin_addr) ){
-	  fprintf(stderr, "Can't get server's address\n");
-	  exit(1);
+	  error_exit("Can't get server's address\n");
 	}
 
     /* Connecting to the content server */
@@ -239,9 +231,7 @@ void receive_download_request(char *host, int port, struct pdu *send_pdu){
         send_pdu->type = 'D';
         size_t pdu_size = sizeof(struct pdu);
         if (write(tcp_sock, send_pdu, pdu_size) != pdu_size) {
-            perror("Failed to send PDU");
-            close(tcp_sock);
-            exit(1);
+            error_exit("Failed to send PDU");
         }
     }
 
@@ -262,7 +252,7 @@ void display_menu(){
 
 
 int main(int argc, char **argv){
-    int udp_sock, tcp_port, tcp_sock;
+    int udp_sock, tcp_download_port, tcp_download_socket;
     struct pdu send_pdu, receive_pdu;
     struct sockaddr_in sin;
     int alen = sizeof(sin);
@@ -310,17 +300,17 @@ int main(int argc, char **argv){
     }
     /*------------------------------------------------------------------------------*/
 
-    //TCP Setup
+    //TCP Setup for downloading peer content
     /*------------------------------------------------------------------------------*/
     //setup tcp port for content hosting
-    tcp_port = getsocketname(&tcp_sock);
+    tcp_download_port = getsocketname(&tcp_download_socket);
 
-    printf("TCP port for content hosting: %d\n", tcp_port); //testing
+    printf("TCP port for content hosting: %d\n", tcp_download_port); //testing
     /*------------------------------------------------------------------------------*/
     
     //Select attributes initialization
     FD_ZERO(&afds);
-    FD_SET(tcp_sock, &afds);  // Add TCP listening socket
+    FD_SET(tcp_download_socket, &afds);  // Add TCP listening socket
     FD_SET(udp_sock, &afds);  // Add UDP socket
     FD_SET(0, &afds);         // Add stdin
 
@@ -338,21 +328,21 @@ int main(int argc, char **argv){
             exit(1);
         }
 
-        // Check if there’s an incoming TCP connection (content download)
-        if (FD_ISSET(tcp_sock, &rfds)) {
+        // Check if there’s an incoming TCP connection (handle client content download)
+        if (FD_ISSET(tcp_download_socket, &rfds)) {
             int client_len, new_tcp_sock;
             struct sockaddr_in client;
             (void) signal(SIGCHLD, reaper);
 
             while(1) {
             client_len = sizeof(client);
-            new_tcp_sock = accept(tcp_sock, (struct sockaddr *)&client, &client_len);
+            new_tcp_sock = accept(tcp_download_socket, (struct sockaddr *)&client, &client_len);
             if(new_tcp_sock < 0){
                 error_exit("Can't accept client \n");
             }
             switch (fork()){
             case 0:		/* child */
-                (void) close(tcp_sock);
+                (void) close(tcp_download_socket);
                 exit(handle_client(new_tcp_sock));
             default:		/* parent */
                 (void) close(new_tcp_sock);
@@ -386,8 +376,6 @@ int main(int argc, char **argv){
                     break;
                 case 'S':
                     //search content
-                    
-
                     strncpy(content_server_host, receive_pdu.data, 10);
 				    content_server_host[10] = '\0';
 				    strncpy(content_server_port, receive_pdu.data + 10, 10);
@@ -417,13 +405,15 @@ int main(int argc, char **argv){
             char option;
             option = getchar();
             while (getchar() != '\n');
-            //printf("Option selected: %c\n", option); //testing
 
             switch(option){
             case 'R':
                 resetPDUs(&send_pdu, &receive_pdu);
+
+                //create new tcp socket for each registered file
                 
-                register_file(&send_pdu, tcp_port);
+                
+                register_file(&send_pdu);
                 
                 //send content registration request to index server
                 printf("send pdu type: %c\n", send_pdu.type);//testing
@@ -463,7 +453,7 @@ int main(int argc, char **argv){
             case 'Q':
                 printf("Exiting P2P network.\n");
                 close(udp_sock);
-                close(tcp_sock);
+                close(tcp_download_socket);
                 exit(0);
                 break;
             case 'M':
