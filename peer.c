@@ -12,20 +12,19 @@
 
 #define MAX_DATA_SIZE 100
 
-//function declarations
-
-
+//PDU structure
 struct pdu {
     char type;
     char data[MAX_DATA_SIZE];  //keep data section and manually split up by 10 bytes on receiving?
 };
 
-//error function
+//error function **DONE
 void error_exit(const char *msg) {
     perror(msg);
-    exit(1);
+    //exit(1);
 }
 
+//get socket name **DONE
 int getsocketname(int *sd){
     socklen_t alen= sizeof (struct sockaddr_in);
     struct sockaddr_in reg_addr;
@@ -40,11 +39,16 @@ int getsocketname(int *sd){
     return ntohs(reg_addr.sin_port);
 }
 
-/* child tcp client downloads program */
-int handle_client_downloads(int sd)
+//handle client function (TCP) **IN PROGRESS
+int handle_client(int sd) 
 {
 	char	*bp, buf[MAX_DATA_SIZE];
 	int 	n, bytes_to_read;
+
+    //sent 'D' type PDU with content name to trigger download
+    struct pdu send_pdu;
+    send_pdu.type = 'D';
+
 
 	// Read filename from the TCP connection
     n = read(sd, buf, MAX_DATA_SIZE);
@@ -93,7 +97,7 @@ int handle_client_downloads(int sd)
 	return(0);
 }
 
-/*Register File*/
+//Register file **DONE
 void register_file(struct pdu *send_pdu, int tcp_sock){
 
     char temp[20];
@@ -148,7 +152,7 @@ void register_file(struct pdu *send_pdu, int tcp_sock){
 
 }
 
-//reaper function (TCP)
+//reaper function (TCP) **DONE
 void	reaper(int sig)
 {
 	int	status;
@@ -156,55 +160,18 @@ void	reaper(int sig)
 
 }
 
-//Host and download content
-void content_hosting(int *sd){
-    struct sockaddr_in hosting_address;
-    socklen_t alen = sizeof(struct sockaddr_in);
-    
-    //testing
-    printf("Content hosting on port: %d\n", ntohs(hosting_address.sin_port));
-
-    (void) signal(SIGCHLD, reaper);
-
-    // handle client connections
-    struct sockaddr_in client;
-    int client_len, new_sd;
-    struct pdu send_pdu, receive_pdu;
-    char clientAddrReadable[MAX_DATA_SIZE];
-
-    while(1) {
-	  client_len = sizeof(client);
-	  new_sd = accept(*sd, (struct sockaddr *)&client, &client_len);
-	  if(new_sd < 0){
-	    fprintf(stderr, "Can't accept client \n");
-	    exit(1);
-	  }
-	  switch (fork()){
-	  case 0:		/* child */
-		(void) close(*sd);
-		exit(handle_client_downloads(new_sd));
-	  default:		/* parent */
-		(void) close(new_sd);
-		break;
-	  case -1:
-		fprintf(stderr, "fork: error\n");
-	  }
-	}
-
-    close(*sd);
-}
-
-//reset pdu char arrays
+//reset pdu char arrays **DONE
 void resetPDUs(struct pdu *send_pdu, struct pdu *receive_pdu){
     memset(send_pdu->data, 0, sizeof(send_pdu->data));
     memset(receive_pdu->data, 0, sizeof(receive_pdu->data));
 }
 
-int request_download(struct pdu *send_pdu, struct pdu *receive_pdu, int *udp_sock, struct sockaddr_in *sin, int alen){
+//request download from another server **DONE
+int request_download(struct pdu *send_pdu, int *udp_sock, struct sockaddr_in *sin, int alen){
     char temp[20];
-   send_pdu->type = 'S';
+    send_pdu->type = 'S';
 
-   //get peer name
+    //get peer name
     while (1) {
         printf("Enter the peer name:\n");
 
@@ -238,28 +205,54 @@ int request_download(struct pdu *send_pdu, struct pdu *receive_pdu, int *udp_soc
         error_exit("Failed to send PDU");
     }
     printf("Sent download request to index server.\n");
-
-    if(recvfrom(*udp_sock, receive_pdu, sizeof(*receive_pdu), 0, (struct sockaddr *)sin, &alen) == -1){
-        error_exit("Failed to receive response");
-    }
-
-    if(receive_pdu->type == 'S'){
-        printf("File found. Address: %s\n", receive_pdu->data);
-        return atoi(receive_pdu->data);
-    } else if(receive_pdu->type == 'E'){
-        error_exit(receive_pdu->data);
-    } else {
-        error_exit("Unexpected response from index server.");
-    }
     
 }
 
+//receive download request from content server **IN PROGRESS
+void receive_download_request(char *host, int port, struct pdu *send_pdu){
+    int tcp_sock;
+    struct	hostent		*hp;
+    struct sockaddr_in server;
+
+    //connect to content server
+    /* Create a stream socket	*/	
+	if ((tcp_sock = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+		fprintf(stderr, "Can't creat a socket\n");
+		exit(1);
+	}
+
+	bzero((char *)&server, sizeof(struct sockaddr_in));
+	server.sin_family = AF_INET;
+	server.sin_port = htons(port);
+	if (hp = gethostbyname(host)) 
+	  bcopy(hp->h_addr, (char *)&server.sin_addr, hp->h_length);
+	else if ( inet_aton(host, (struct in_addr *) &server.sin_addr) ){
+	  fprintf(stderr, "Can't get server's address\n");
+	  exit(1);
+	}
+
+    /* Connecting to the content server */
+	if (connect(tcp_sock, (struct sockaddr *)&server, sizeof(server)) == -1){
+	  error_exit("Can't connect to content server \n");
+	}
+    else{
+        send_pdu->type = 'D';
+        size_t pdu_size = sizeof(struct pdu);
+        if (write(tcp_sock, send_pdu, pdu_size) != pdu_size) {
+            perror("Failed to send PDU");
+            close(tcp_sock);
+            exit(1);
+        }
+    }
+
+}
+
+//Display menu options **DONE
 void display_menu(){
     //User input
     printf("Please select an option:\n");
     printf("Enter R to register a file for download.\n"
     "Enter D to download a file from the server.\n"
-    "Enter S to search for a file.\n"
     "Enter T to deregister a file.\n"
     "Enter O to list the files available for download.\n"
     "Enter M to list these options again.\n"
@@ -267,12 +260,13 @@ void display_menu(){
     );
 }
 
+
 int main(int argc, char **argv){
     int udp_sock, tcp_port, tcp_sock;
     struct pdu send_pdu, receive_pdu;
     struct sockaddr_in sin;
     int alen = sizeof(sin);
-    struct hostent	*phe;
+    struct hostent	*phe, *hp;
     int port = 3000;
     char *host = "localhost";
     fd_set afds, rfds;
@@ -316,7 +310,7 @@ int main(int argc, char **argv){
     }
     /*------------------------------------------------------------------------------*/
 
-    //TCP Connection
+    //TCP Setup
     /*------------------------------------------------------------------------------*/
     //setup tcp port for content hosting
     tcp_port = getsocketname(&tcp_sock);
@@ -336,12 +330,84 @@ int main(int argc, char **argv){
     //main loop
     while(1){
         memcpy(&rfds, &afds, sizeof(rfds));
-        printf("\n");
-        printf("Enter option or M to list options:\n");
+        // printf("\n");
+        // printf("Enter option or M to list options:\n");
 
         if (select(FD_SETSIZE, &rfds, NULL, NULL, NULL) < 0) {
             perror("select error");
             exit(1);
+        }
+
+        // Check if there’s an incoming TCP connection (content download)
+        if (FD_ISSET(tcp_sock, &rfds)) {
+            int client_len, new_tcp_sock;
+            struct sockaddr_in client;
+            (void) signal(SIGCHLD, reaper);
+
+            while(1) {
+            client_len = sizeof(client);
+            new_tcp_sock = accept(tcp_sock, (struct sockaddr *)&client, &client_len);
+            if(new_tcp_sock < 0){
+                error_exit("Can't accept client \n");
+            }
+            switch (fork()){
+            case 0:		/* child */
+                (void) close(tcp_sock);
+                exit(handle_client(new_tcp_sock));
+            default:		/* parent */
+                (void) close(new_tcp_sock);
+                break;
+            case -1:
+                fprintf(stderr, "fork: error\n");
+            }
+            }
+        }
+
+        //check incoming udp packets
+        if(FD_ISSET(udp_sock, &rfds)){
+            resetPDUs(&send_pdu, &receive_pdu); //clear pdus
+
+            if (recvfrom(udp_sock, &receive_pdu, sizeof(receive_pdu), 0, (struct sockaddr *)&sin, &alen) == -1) {
+                   error_exit("Failed to receive response");
+                }
+
+            char rtype = receive_pdu.type;
+
+            switch(rtype){
+                case 'A':
+                    //registration success acknowledgment
+                    printf("%s", receive_pdu.data );
+                    printf("\n");
+                    break;
+                case 'E':
+                    //download content
+                    error_exit(receive_pdu.data);
+                    break;
+                case 'S':
+                    //search content
+                    char content_server_host[11], content_server_port[11];
+
+                    strncpy(content_server_host, receive_pdu.data, 10);
+				    content_server_host[10] = '\0';
+				    strncpy(content_server_port, receive_pdu.data + 10, 10);
+				    content_server_port[10] = '\0';
+
+                    printf("Content server host: %s\n", content_server_host); //testing
+                    printf("Content server port: %s\n", content_server_port);
+
+                    receive_download_request(content_server_host, atoi(content_server_port), &send_pdu);
+                    break;
+                case 'C':
+                    //deregister content
+                    break;
+                case 'O':
+                    //list available content
+                    printf("Available content:\n%s\n", receive_pdu.data);
+                    break;
+                default:
+                    printf("Invalid response from index server.\n");
+                    break;
+            }
         }
 
         // Check stdin for user input
@@ -368,64 +434,14 @@ int main(int argc, char **argv){
                 }
                 printf("Sent registration request to index server.\n");
 
-                
-                //receive response from index server - possibly change to read
-                if (recvfrom(udp_sock, &receive_pdu, sizeof(receive_pdu), 0, (struct sockaddr *)&sin, &alen) == -1) {
-                   error_exit("Failed to receive response");
-                }
-
-                // //handle response
-                if (receive_pdu.type == 'A') {
-                   printf("%s", receive_pdu.data );
-                   printf("\n");
-                } else if (receive_pdu.type == 'E') {
-                   error_exit(receive_pdu.data);
-                } else {
-                    error_exit("Unexpected response from index server.");
-                 }
                 break;
 
             case 'D':
                 resetPDUs(&send_pdu, &receive_pdu);
-                int host_address;
-
-                //get address for tcp peer download from server
-                host_address = request_download(&send_pdu, &receive_pdu, &udp_sock, &sin, alen);
-
-                //tcp download
-                if(connect(host_address, (struct sockaddr *)&sin, alen) == -1){
-                    error_exit("Failed to connect to host");
-                }
-                else{
-                    //if tcp connection successful:
-                    resetPDUs(&send_pdu, &receive_pdu);
-                    send_pdu.type = 'D';
-                    snprintf(send_pdu.data, sizeof(send_pdu.data), "%d", host_address);
-
-                    if(sendto(udp_sock, &send_pdu, sizeof(send_pdu), 0, (struct sockaddr*)&sin, alen) == -1){
-                        error_exit("Failed to send PDU");
-                    }
-
-                    if(recvfrom(udp_sock, &receive_pdu, sizeof(receive_pdu), 0, (struct sockaddr *)&sin, &alen) == -1){
-                        error_exit("Failed to receive response");
-                    }
-                    else if(receive_pdu.type == 'C'){
-                        //tcp download of all the content
-                    }
-                    else if(receive_pdu.type == 'E'){
-                        error_exit(receive_pdu.data);
-                    }
-                    else{
-                        printf("Unexpected response from index server.\n");
-                    }
-                }
-
-                break;
-            case 'S':
-                resetPDUs(&send_pdu, &receive_pdu);
-
-                //search_content();
                 
+                //request download from another server
+                request_download(&send_pdu, &udp_sock, &sin, alen);
+
                 break;
             case 'T':
                 resetPDUs(&send_pdu, &receive_pdu);
@@ -433,29 +449,20 @@ int main(int argc, char **argv){
                 //deregister_content();
                 break;
             case 'O':
-                resetPDUs(&send_pdu, &receive_pdu); //clear pdus
+                resetPDUs(&send_pdu, &receive_pdu);
 
+                //list available content
                 send_pdu.type = 'O';
                 if (sendto(udp_sock, &send_pdu, sizeof(send_pdu), 0, (struct sockaddr*)&sin, alen) == -1) {
                    error_exit("Failed to send PDU");
                 }
                 printf("Sent request to list available content.\n");
 
-                if (recvfrom(udp_sock, &receive_pdu, sizeof(receive_pdu), 0, (struct sockaddr *)&sin, &alen) == -1) {
-                   error_exit("Failed to receive response");
-                }
-                if (receive_pdu.type == 'O') {
-                    printf("Available content:\n%s\n", receive_pdu.data);
-                } else if(receive_pdu.type == 'E') {
-                    error_exit(receive_pdu.data);
-                } else {
-                    printf("Unexpected response from index server.\n");
-                }
-
                 break;
             case 'Q':
                 printf("Exiting P2P network.\n");
                 close(udp_sock);
+                close(tcp_sock);
                 exit(0);
                 break;
             case 'M':
@@ -465,12 +472,9 @@ int main(int argc, char **argv){
                 printf("Invalid option. Please try again.\n");
                 break;
         }
+
+        
             
-        }
-
-        // Check if there’s an incoming TCP connection (content download)
-        if (FD_ISSET(tcp_sock, &rfds)) {
-
         }
     }
 }
