@@ -129,7 +129,7 @@ void search_and_send_file_info(int sock, struct node *file_info_list, const char
 
     // Send the address and port back to the client
     send_pdu.type = 'S';
-    snprintf(send_pdu.data, sizeof(send_pdu.data), "Address: %s, Port: %d", inet_ntoa(file_address->sin_addr), ntohs(file_address->sin_port));
+    snprintf(send_pdu.data, sizeof(send_pdu.data), "%-10s%-10d", inet_ntoa(file_address->sin_addr), ntohs(file_address->sin_port));
 
     // Debug print statement to show the sent packet contents
     printf("Sending packet: type=%c, data=%s\n", send_pdu.type, send_pdu.data);
