@@ -372,6 +372,7 @@ int main(int argc, char **argv){
                 }
 
             char rtype = receive_pdu.type;
+            char content_server_host[11], content_server_port[11];
 
             switch(rtype){
                 case 'A':
@@ -385,7 +386,7 @@ int main(int argc, char **argv){
                     break;
                 case 'S':
                     //search content
-                    char content_server_host[11], content_server_port[11];
+                    
 
                     strncpy(content_server_host, receive_pdu.data, 10);
 				    content_server_host[10] = '\0';
