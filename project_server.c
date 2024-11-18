@@ -120,25 +120,25 @@ void search_and_send_file_info(int sock, struct node *file_info_list, const char
 
     struct pdu send_pdu;
     if (found_node != NULL) {
-        // File found, return the address associated with the file_info
-        struct sockaddr_in *file_address = &found_node->data.host_address;
-        printf("File found. Address: %s\n", inet_ntoa(file_address->sin_addr));
+    // File found, return the address associated with the file_info
+    struct sockaddr_in *file_address = &found_node->data.host_address;
+    printf("File found. Address: %s, Port: %d\n", inet_ntoa(file_address->sin_addr), ntohs(file_address->sin_port));
 
-        // Increment the request_count for the found file
-        found_node->data.request_count++;
+    // Increment the request_count for the found file
+    found_node->data.request_count++;
 
-        // Send the address back to the client
-        send_pdu.type = 'S';
-        snprintf(send_pdu.data, sizeof(send_pdu.data), "Address: %s", inet_ntoa(file_address->sin_addr));
+    // Send the address and port back to the client
+    send_pdu.type = 'S';
+    snprintf(send_pdu.data, sizeof(send_pdu.data), "Address: %s, Port: %d", inet_ntoa(file_address->sin_addr), ntohs(file_address->sin_port));
 
-        // Debug print statement to show the sent packet contents
-        printf("Sending packet: type=%c, data=%s\n", send_pdu.type, send_pdu.data);
+    // Debug print statement to show the sent packet contents
+    printf("Sending packet: type=%c, data=%s\n", send_pdu.type, send_pdu.data);
 
-        sendto(sock, &send_pdu, sizeof(send_pdu), 0, (struct sockaddr *)fsin, alen);
-    } else {
-        // File not found, send an error message to the client
-        send_error_pdu(sock, fsin, alen, "Error: File not found");
-    }
+    sendto(sock, &send_pdu, sizeof(send_pdu), 0, (struct sockaddr *)fsin, alen);
+	} else {
+		// File not found, send an error message to the client
+		send_error_pdu(sock, fsin, alen, "Error: File not found");
+	}
 }
 
 void print_file_info_list(int sock, struct node *head, struct sockaddr_in *client_addr, socklen_t alen) {
