@@ -37,9 +37,10 @@ struct node {
 // Function prototypes
 struct node* add_file_info(struct node *head, struct file_info new_info, int sock, struct sockaddr_in *client_addr, socklen_t alen);
 void send_error_pdu(int sock, struct sockaddr_in *client_addr, socklen_t alen, const char *error_message);
-struct node* remove_file_info(int sock, struct node *head, const char *filename, const char *peer_name, struct sockaddr_in *client_addr, socklen_t alen);
+struct node* remove_file_info(struct node *head, const char *filename, const char *peer_name, struct sockaddr_in host_address);
 void print_file_info_list(int sock, struct node *head, struct sockaddr_in *client_addr, socklen_t alen);
 void free_file_info_list(struct node *head);
+void search_and_send_file_info(int sock, struct node *file_info_list, const char *file_name, const char *peer_name, struct sockaddr_in *fsin, socklen_t alen);
 
 struct node* add_file_info(struct node *head, struct file_info new_info, int sock, struct sockaddr_in *client_addr, socklen_t alen) {
     // Search for matching file name and same peer name in the linked list
@@ -68,14 +69,15 @@ struct node* add_file_info(struct node *head, struct file_info new_info, int soc
 }
 
 // Requires the filename, peer name, and host address to match
-struct node* remove_file_info(int sock, struct node *head, const char *filename, const char *peer_name, struct sockaddr_in *client_addr, socklen_t alen) {
+struct node* remove_file_info(struct node *head, const char *filename, const char *peer_name, struct sockaddr_in host_address) {
     struct node *current = head;
     struct node *previous = NULL;
 
     while (current != NULL) {
         // Check if the current node's filename, peer name, and host address match the target values
         if (strcmp(current->data.filename, filename) == 0 &&
-            strcmp(current->data.peer_name, peer_name) == 0 &&) {
+            strcmp(current->data.peer_name, peer_name) == 0 &&
+            memcmp(&current->data.host_address, &host_address, sizeof(struct sockaddr_in)) == 0) {
             // If it's the head node
             if (previous == NULL) {
                 head = current->next;
@@ -83,24 +85,60 @@ struct node* remove_file_info(int sock, struct node *head, const char *filename,
                 previous->next = current->next;
             }
             free(current);
-			// Send a success PDU to the client
-			send_pdu.type = 'A';
-			strncpy(send_pdu.data, "File successfully deregistered", sizeof(send_pdu.data) - 1);
-			send_pdu.data[sizeof(send_pdu.data) - 1] = '\0'; // Ensure null-termination
-			if (sendto(sock, &send_pdu, sizeof(send_pdu), 0, (struct sockaddr *)&fsin, alen) < 0) {
-				perror("sendto");
-			} else {
-				printf("Acknowledgment sent: File successfully deregistered\n");
-			}
             return head;
         }
         previous = current;
         current = current->next;
     }
 
-    // If the filename was not found, send error PDU and return the original head
-	send_error_pdu(sock, &fsin, alen, "Error: Failed to deregister file");
+    // If the filename was not found, return the original head
     return head;
+}
+
+// Function to search for the file and send the file info
+void search_and_send_file_info(int sock, struct node *file_info_list, const char *file_name, const char *peer_name, struct sockaddr_in *fsin, socklen_t alen) {
+    // Print the extracted peer name and file name for debugging
+    printf("Searching for file: %s Request from peer: %s\n", file_name, peer_name);
+
+    // Find the file_info in the linked list with the lowest request_count
+    struct node *current = file_info_list;
+    struct node *found_node = NULL;
+    int min_request_count = INT_MAX;
+
+    // Iterate through the linked list to find the file with the lowest request_count
+    // that matches the file_name and does not have the same peer_name as the requestor
+    while (current != NULL) {
+        printf("Checking node: filename=%s, peer_name=%s, request_count=%d\n", current->data.filename, current->data.peer_name, current->data.request_count);
+        if (strcmp(current->data.filename, file_name) == 0 && strcmp(current->data.peer_name, peer_name) != 0) {
+            if (current->data.request_count < min_request_count) {
+                min_request_count = current->data.request_count;
+                found_node = current;
+            }
+        }
+        current = current->next;
+    }
+
+    struct pdu send_pdu;
+    if (found_node != NULL) {
+    // File found, return the address associated with the file_info
+    struct sockaddr_in *file_address = &found_node->data.host_address;
+    printf("File found. Address: %s, Port: %d\n", inet_ntoa(file_address->sin_addr), ntohs(file_address->sin_port));
+
+    // Increment the request_count for the found file
+    found_node->data.request_count++;
+
+    // Send the address and port back to the client
+    send_pdu.type = 'S';
+    snprintf(send_pdu.data, sizeof(send_pdu.data), "%-10s%-10d", inet_ntoa(file_address->sin_addr), ntohs(file_address->sin_port));
+
+    // Debug print statement to show the sent packet contents
+    printf("Sending packet: type=%c, data=%s\n", send_pdu.type, send_pdu.data);
+
+    sendto(sock, &send_pdu, sizeof(send_pdu), 0, (struct sockaddr *)fsin, alen);
+	} else {
+		// File not found, send an error message to the client
+		send_error_pdu(sock, fsin, alen, "Error: File not found");
+	}
 }
 
 void print_file_info_list(int sock, struct node *head, struct sockaddr_in *client_addr, socklen_t alen) {
@@ -152,7 +190,6 @@ int main(int argc, char *argv[])
 {
 	struct  sockaddr_in fsin;	/* the from address of a client	*/
 	char	buf[MAX_DATA_SIZE];		/* "input" buffer; any size > 0	*/
-	int		sock;			/* server socket		*/
 	int		alen;			/* from-address length		*/
 	struct  sockaddr_in sin; /* an Internet endpoint address         */
     int     s, type;        /* socket descriptor and socket type    */
@@ -179,17 +216,17 @@ int main(int argc, char *argv[])
 	sin.sin_family = AF_INET;
 	sin.sin_addr.s_addr = INADDR_ANY;
 	sin.sin_port = htons(port);
-                                                                                                 
-    /* Allocate a socket */
+
+	/* Allocate a socket */
 	s = socket(AF_INET, SOCK_DGRAM, 0);
 	if (s < 0){
 		fprintf(stderr, "can't create socket\n");
 		exit(1);
 	}
-                                                                                
-    /* Bind the socket */
+
+	/* Bind the socket */
 	if (bind(s, (struct sockaddr *)&sin, sizeof(sin)) < 0){
-		fprintf(stderr, "can't bind to %d port\n",port);
+		fprintf(stderr, "can't bind to %d port\n", port);
 		listen(s, 5);	
 	}
 	alen = sizeof(fsin);
@@ -227,21 +264,17 @@ int main(int argc, char *argv[])
 				// Print the extracted sender IP address for debugging
 				printf("Received sender IP: %s\n", inet_ntoa(sender_addr.sin_addr));
 
-				// Print the raw data for debugging
-				// printf("Raw data: ");
-				// for (int i = 0; i < sizeof(recv_pdu.data); i++) {
-				// 	printf("%02x ", (unsigned char)recv_pdu.data[i]);
-				// }
-				// printf("\n");
-				printf("Raw data: %s\n", recv_pdu.data);
-
 				// Extract the sender file TCP port from recv_pdu.data (assuming it's stored after the file name)
-				uint16_t sender_port;
-				memcpy(&sender_port, recv_pdu.data + 20, sizeof(sender_port));
-				sender_addr.sin_port = sender_port;
+				int sender_port;
+				char port_str[6]; // Assuming the port number is no longer than 5 digits
+				memcpy(port_str, recv_pdu.data + 20, sizeof(port_str) - 1);
+				port_str[5] = '\0'; // Null-terminate the string
+
+				sender_port = atoi(port_str);
+				sender_addr.sin_port = htons(sender_port); // Use htons to convert to network byte order
 
 				// Print the extracted sender port for debugging
-				printf("Received sender port: %u\n", ntohs(sender_port));
+				printf("Received sender port: %u\n", sender_port);
 
 				// Create a new file_info structure
 				struct file_info new_file_info;
@@ -253,7 +286,7 @@ int main(int argc, char *argv[])
 				new_file_info.request_count = 0; // Initialize request_count to 0
 
 				// Add the new file_info to the linked list
-				struct node *new_head = add_file_info(file_info_list, new_file_info, sock, &fsin, alen);
+				struct node *new_head = add_file_info(file_info_list, new_file_info, s, &fsin, alen);
 
 				if (new_head != file_info_list) {
 					// Update the head of the list
@@ -282,43 +315,7 @@ int main(int argc, char *argv[])
 				strncpy(file_name, recv_pdu.data + 10, 10);
 				file_name[10] = '\0';
 
-				// Print the extracted peer name and file name for debugging
-				printf("Searching for file: %s Request from peer: %s\n", file_name, peer_name);
-
-				// Find the file_info in the linked list with the lowest request_count
-				struct node *current = file_info_list;
-				struct node *found_node = NULL;
-				int min_request_count = INT_MAX;
-
-				// Iterate through the linked list to find the file with the lowest request_count
-				// that matches the file_name and does not have the same peer_name as the requestor
-				while (current != NULL) {
-					printf("Checking node: filename=%s, peer_name=%s, request_count=%d\n", current->data.filename, current->data.peer_name, current->data.request_count);
-					if (strcmp(current->data.filename, file_name) == 0 && strcmp(current->data.peer_name, peer_name) != 0) {
-						if (current->data.request_count < min_request_count) {
-							min_request_count = current->data.request_count;
-							found_node = current;
-						}
-					}
-					current = current->next;
-				}
-
-				if (found_node != NULL) {
-					// File found, return the address associated with the file_info
-					struct sockaddr_in *file_address = &found_node->data.host_address;
-					printf("File found. Address: %s\n", inet_ntoa(file_address->sin_addr));
-
-					// Increment the request_count for the found file
-					found_node->data.request_count++;
-
-					// Send the address back to the client
-					send_pdu.type = 'S';
-					snprintf(send_pdu.data, sizeof(send_pdu.data), "Address: %s", inet_ntoa(file_address->sin_addr));
-					sendto(sock, &send_pdu, sizeof(send_pdu), 0, (struct sockaddr *)&fsin, alen);
-				} else {
-					// File not found, send an error message to the client
-					send_error_pdu(sock, &fsin, alen, "Error: File not found");
-				}
+				search_and_send_file_info(s, file_info_list, file_name, peer_name, &fsin, alen);
 
 				break;
 			case 'T':
@@ -333,19 +330,28 @@ int main(int argc, char *argv[])
 				printf("Deregistering file: %s from peer: %s\n", file_name, peer_name);
 
 				// Remove the file_info from the linked list
-				file_info_list = remove_file_info(sock, file_info_list, file_name, peer_name, &fsin, alen);
+				file_info_list = remove_file_info(file_info_list, file_name, peer_name, fsin);
 
-				// Send result PDU in remove_file_info function
+				// Send a success PDU to the client
+				send_pdu.type = 'A';
+				strncpy(send_pdu.data, "File successfully deregistered", sizeof(send_pdu.data) - 1);
+				send_pdu.data[sizeof(send_pdu.data) - 1] = '\0'; // Ensure null-termination
+				if (sendto(s, &send_pdu, sizeof(send_pdu), 0, (struct sockaddr *)&fsin, alen) < 0) {
+					perror("sendto");
+				} else {
+					printf("Acknowledgment sent: File successfully deregistered\n");
+				}
+
 				break;
 			case 'O':
 				// Client is requesting the list of files
 				printf("Client is requesting the list of files\n");
-				print_file_info_list(sock, file_info_list, &fsin, alen);
+				print_file_info_list(s, file_info_list, &fsin, alen);
 				break;
 			default:
 				// Invalid PDU type
 				printf("Error: Invalid PDU type\n");
-				send_error_pdu(sock, &fsin, alen, "Error: Invalid PDU type");
+				send_error_pdu(s, &fsin, alen, "Error: Invalid PDU type");
 				break;
 		}
 	}
