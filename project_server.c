@@ -37,7 +37,7 @@ struct node {
 // Function prototypes
 struct node* add_file_info(struct node *head, struct file_info new_info, int sock, struct sockaddr_in *client_addr, socklen_t alen);
 void send_error_pdu(int sock, struct sockaddr_in *client_addr, socklen_t alen, const char *error_message);
-struct node* remove_file_info(struct node *head, const char *filename, const char *peer_name, struct sockaddr_in host_address);
+struct node* remove_file_info(int sock, struct node *head, const char *filename, const char *peer_name, struct sockaddr_in *client_address, socklen_t alen);
 void print_file_info_list(int sock, struct node *head, struct sockaddr_in *client_addr, socklen_t alen);
 void free_file_info_list(struct node *head);
 void search_and_send_file_info(int sock, struct node *file_info_list, const char *file_name, const char *peer_name, struct sockaddr_in *fsin, socklen_t alen);
@@ -68,16 +68,16 @@ struct node* add_file_info(struct node *head, struct file_info new_info, int soc
     return new_node;
 }
 
-// Requires the filename, peer name, and host address to match
-struct node* remove_file_info(struct node *head, const char *filename, const char *peer_name, struct sockaddr_in host_address) {
+// Requires the filename and peer name to match
+struct node* remove_file_info(int sock, struct node *head, const char *filename, const char *peer_name, struct sockaddr_in *client_addr, socklen_t alen) {
     struct node *current = head;
     struct node *previous = NULL;
+	struct pdu send_pdu; // PDU for deregistration result
 
     while (current != NULL) {
         // Check if the current node's filename, peer name, and host address match the target values
         if (strcmp(current->data.filename, filename) == 0 &&
-            strcmp(current->data.peer_name, peer_name) == 0 &&
-            memcmp(&current->data.host_address, &host_address, sizeof(struct sockaddr_in)) == 0) {
+            strcmp(current->data.peer_name, peer_name) == 0) {
             // If it's the head node
             if (previous == NULL) {
                 head = current->next;
@@ -85,13 +85,24 @@ struct node* remove_file_info(struct node *head, const char *filename, const cha
                 previous->next = current->next;
             }
             free(current);
+			// Send a success PDU to the client
+			send_pdu.type = 'A';
+			strncpy(send_pdu.data, "File successfully deregistered", sizeof(send_pdu.data) - 1);
+			send_pdu.data[sizeof(send_pdu.data) - 1] = '\0'; // Ensure null-termination
+			if (sendto(sock, &send_pdu, sizeof(send_pdu), 0, (struct sockaddr *)client_addr, alen) < 0) {
+				perror("sendto");
+			} else {
+				printf("Acknowledgment sent: File successfully deregistered\n");
+			}
             return head;
         }
         previous = current;
         current = current->next;
     }
 
-    // If the filename was not found, return the original head
+    // If the filename was not found, return the original head and send error
+	send_error_pdu(sock, client_addr, alen, "Error: Failed to deregister file");
+	printf("File failed to deregister\n");
     return head;
 }
 
@@ -330,17 +341,9 @@ int main(int argc, char *argv[])
 				printf("Deregistering file: %s from peer: %s\n", file_name, peer_name);
 
 				// Remove the file_info from the linked list
-				file_info_list = remove_file_info(file_info_list, file_name, peer_name, fsin);
+				file_info_list = remove_file_info(s, file_info_list, file_name, peer_name, &fsin, alen);
 
-				// Send a success PDU to the client
-				send_pdu.type = 'A';
-				strncpy(send_pdu.data, "File successfully deregistered", sizeof(send_pdu.data) - 1);
-				send_pdu.data[sizeof(send_pdu.data) - 1] = '\0'; // Ensure null-termination
-				if (sendto(s, &send_pdu, sizeof(send_pdu), 0, (struct sockaddr *)&fsin, alen) < 0) {
-					perror("sendto");
-				} else {
-					printf("Acknowledgment sent: File successfully deregistered\n");
-				}
+				// Result statement sent in remove_file_info function
 
 				break;
 			case 'O':
