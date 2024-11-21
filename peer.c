@@ -602,6 +602,7 @@ int main(int argc, char **argv){
 
                     //close registered tcp sockets
                     close(current->socket);
+                    current = current->next;
                 }
 
                 close(udp_sock);
