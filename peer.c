@@ -18,7 +18,7 @@ struct pdu {
     char data[MAX_DATA_SIZE];  //keep data section and manually split up by 10 bytes on receiving?
 };
 
-//Registered sockets linked list
+//Registered sockets nodes
 struct SocketNode {
     int socket;
     char peer_name[11];
@@ -33,7 +33,7 @@ void error_exit(const char *msg) {
     //exit(1);
 }
 
-//get socket name **DONE
+//create tcp sockets and get socket port **DONE
 int getsocketname(int *sd){
     socklen_t alen= sizeof (struct sockaddr_in);
     struct sockaddr_in reg_addr;
@@ -50,59 +50,108 @@ int getsocketname(int *sd){
     return ntohs(reg_addr.sin_port);
 }
 
-//handle client function (TCP) **IN PROGRESS
+//handle client download (TCP) **IN PROGRESS
 int handle_client(int sd) 
 {
 	char	*bp;
-    struct pdu send_pdu, receive_pdu;
 	int 	n, bytes_to_read;
+    struct pdu send_pdu, receive_pdu;
+    FILE *file;
 
     printf("Client connected, handling request...\n"); //testing
 
+	// Read filename from the TCP connection
+    n = read(sd, &receive_pdu, 20);
+    if (n <= 0) {
+        error_exit("Failed to read data from client");
+    }
 
-	// // Read filename from the TCP connection
-    // n = read(sd, buf, MAX_DATA_SIZE);
-    // if (n <= 0) {
-    //     perror("Failed to receive filename");
-    //     close(sd);
-    //     return -1;
+    printf("Received PDU type: %c\n", receive_pdu.type); //testing
+    printf("Received PDU data: %s\n", receive_pdu.data); //testing
+
+    char *filename = strtok(receive_pdu.data, " \n");
+    printf("Valid data: %s\n", filename); //testing
+
+	// Open the file
+	int fd = open(filename, O_RDONLY);
+	char error_check_byte;
+	if (fd < 0) {
+		perror("Failed to open file");
+		error_check_byte = '0';
+		if (write(sd, &error_check_byte, 1) != 1) {
+			perror("Failed to send error check byte");
+		}
+		close(sd);
+		return -1; // Ensure function returns an integer value
+	}
+
+	error_check_byte = '1';
+	if (write(sd, &error_check_byte, 1) != 1) {
+		perror("Failed to send error check byte");
+		close(fd);
+		close(sd);
+		return -1; // Ensure function returns an integer value
+	}
+
+    // //testing
+    // memset(&send_pdu, 0, sizeof(send_pdu)); // Clear the struct
+    // send_pdu.type = 'C';
+    // snprintf(send_pdu.data, sizeof(send_pdu.data), "Hello, world!");
+
+    // ssize_t bytes_written = write(sd, &send_pdu, sizeof(send_pdu));
+    // if (bytes_written < 0) {
+    //     perror("Write error");
+    //     exit(EXIT_FAILURE);
+    // } else {
+    //     printf("\n");
+    //     printf("spdu type: %c\n", send_pdu.type);
+    //     printf("spdu data: %s\n", send_pdu.data);
     // }
-    // buf[n] = '\0'; // Null-terminate the filename
+    // //testing ^
+    memset(&send_pdu, 0, sizeof(send_pdu)); // Clear the struct
 
-	// // Open the file
-	// int fd = open(buf, O_RDONLY);
-	// char error_check_byte;
-	// if (fd < 0) {
-	// 	perror("Failed to open file");
-	// 	error_check_byte = '0';
-	// 	if (write(sd, &error_check_byte, 1) != 1) {
-	// 		perror("Failed to send error check byte");
-	// 	}
-	// 	close(sd);
-	// 	return -1; // Ensure function returns an integer value
-	// }
+    if(receive_pdu.type == 'D'){
+        printf("Client requested file: %s\n", filename); //testing
 
-	// error_check_byte = '1';
-	// if (write(sd, &error_check_byte, 1) != 1) {
-	// 	perror("Failed to send error check byte");
-	// 	close(fd);
-	// 	close(sd);
-	// 	return -1; // Ensure function returns an integer value
-	// }
+        file = fopen(filename, "r");
+        if(file == NULL){
+            send_pdu.type = 'E';
+            snprintf(send_pdu.data, sizeof(send_pdu.data), "File not found");
 
-    // // Send the file content over the TCP connection
-    // while ((n = read(fd, buf, MAX_DATA_SIZE)) > 0) {
-    //     if (write(sd, buf, n) != n) {
-    //         perror("Failed to send file content");
-    //         close(fd);
-    //         close(sd);
-    //         return -1;
-    //     }
-    // }
+            if(write(sd, &send_pdu, sizeof(send_pdu)) != sizeof(send_pdu)){
+                error_exit("Failed to send file not found error");
+            }
+        }
+        else{
+            while(1){
+                size_t bytes_read = fread(send_pdu.data, 1, MAX_DATA_SIZE, file);
+                send_pdu.type = 'C';
 
-    // // Close the file and the socket
-    // close(fd);
-	// close(sd);
+                if(bytes_read < MAX_DATA_SIZE){
+                    if(feof(file)){
+                        //end of file, send last data batch
+                        printf("Sending final batch: %s\n", send_pdu.data); //testing
+                        send_pdu.type = 'F';
+
+                        write(sd, &send_pdu, sizeof(send_pdu));
+                    }
+                    break;
+                }
+                else if(bytes_read > 0){
+                    if(write(sd, &send_pdu, sizeof(send_pdu)) != sizeof(send_pdu)){
+                        error_exit("Failed to send file content");
+                    }
+                    printf("Sending data: %s\n", send_pdu.data); //testing
+                }
+            }
+            printf("Data sent\n");
+            fclose(file);    
+        }
+    }
+
+    // Close the file and the socket
+    close(fd);
+	close(sd);
 
 	return(0);
 }
@@ -172,9 +221,9 @@ void resetPDUs(struct pdu *send_pdu, struct pdu *receive_pdu){
 }
 
 //request download from another server **DONE
-char * request_download(struct pdu *send_pdu, int *udp_sock, struct sockaddr_in *sin, int alen){
+char * request_download(struct pdu *send_pdu, int *udp_sock, struct sockaddr_in *sin, int alen, char *requested_file){
     char temp[20];
-    char requested_file[11];
+    //char requested_file[11];
     send_pdu->type = 'S';
 
     //get peer name
@@ -191,12 +240,11 @@ char * request_download(struct pdu *send_pdu, int *udp_sock, struct sockaddr_in 
             }
         }
     }
-    
 
     //file name
     while (1) {
         printf("Enter the name of the file you would like to download:\n");
-        if (fgets(requested_file, sizeof(requested_file), stdin) != NULL) {
+        if (fgets(requested_file, 20, stdin) != NULL) {
             requested_file[strcspn(requested_file, "\n")] = '\0'; //removes newline character
             if (strlen(requested_file) > 10) {
                 printf("File name is too long. Please enter a name with a maximum of 10 characters.\n");
@@ -212,13 +260,12 @@ char * request_download(struct pdu *send_pdu, int *udp_sock, struct sockaddr_in 
         error_exit("Failed to send PDU");
     }
 
-    //requested_file[strlen(requested_file)] = '\n';
     //printf("Sent download request to index server.\n"); //testing
     printf("The file you have requested is %s.\n", requested_file); //testing
     return requested_file;
 }
 
-//delete node from linked list **IN PROGRESS
+//delete node from linked list **DONE
 void deleteNode(struct SocketNode** head, const char* target_peer_name, const char* target_file_name) {
     struct SocketNode* current = *head;
     struct SocketNode* previous = NULL;
@@ -253,8 +300,7 @@ void deleteNode(struct SocketNode** head, const char* target_peer_name, const ch
     printf("Node with peer: %s and file: %s not found.\n", target_peer_name, target_file_name);
 }
 
-
-//deregister content **IN PROGRESS
+//deregister content **DONE
 char* deregister_file(struct SocketNode** registered_tcp_sockets, struct pdu *send_pdu, struct pdu *receive_pdu, int *udp_sock, struct sockaddr_in *sin, int alen){
     char temp[11];
 
@@ -297,6 +343,72 @@ char* deregister_file(struct SocketNode** registered_tcp_sockets, struct pdu *se
     return send_pdu->data;
 }
 
+//handle content download
+void content_download(int sd, char* requested_file){
+    int i;
+    struct pdu receive_pdu;
+    char *filename = strtok(requested_file, " \n");
+    
+    // Open local file to write received content
+		int fd = open("test.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644); //TESTING **CHANGE BACK TO FILENAME IN LAB ROOM
+		if (fd < 0) {
+			error_exit("Failed to open file");
+		}
+
+        sleep(3); //delay to allow client to transmit
+        memset(&receive_pdu, 0, sizeof(receive_pdu)); // Clear the struct
+
+        char discard;
+        if (read(sd, &discard, 1) != 1) {  //discard junk byte
+            perror("Failed to read the first byte");
+            exit(EXIT_FAILURE);
+        }
+        printf("Discarded byte: %c\n", discard); //testing
+
+		int exit_loop = 0;
+		while (!exit_loop && (i = read(sd, &receive_pdu, sizeof(receive_pdu))) > 0) {
+            printf("Bytes read: %d\n", i); //testing
+            printf("Received PDU type: %c\n", receive_pdu.type); // testing
+            printf("Received PDU data: %s\n", receive_pdu.data); // testing
+
+            struct pdu temp_rpdu;
+            temp_rpdu.type = receive_pdu.type;
+            memcpy(temp_rpdu.data, receive_pdu.data, i-1);
+            printf("rdpu data: %s\n", temp_rpdu.data); //testing
+
+            size_t valid_data_length;
+			switch(receive_pdu.type){
+			case 'E':
+				// Error
+				if (receive_pdu.data[0] == '\0') {
+					fprintf(stderr, "Error: File not found. File transfer failed.\n");
+				} else {
+					printf("Error message from server: %s\n", receive_pdu.data);
+				}
+				exit_loop = 1; //Set exit_loop flag to true
+				break;
+			case 'C':
+				// Write to file
+				printf("Receiving file data...\n"); //testing
+                valid_data_length = strlen(receive_pdu.data);
+				write(fd, receive_pdu.data, valid_data_length);
+				break;
+			case 'F':
+				// End of file. Write last batch
+                valid_data_length = strlen(receive_pdu.data);
+				printf("Final batch received...\n"); //testing
+				write(fd, receive_pdu.data, valid_data_length);
+				exit_loop = 1; //Set exit_loop flag to true
+				break;
+			default:
+				// Unrecognized type
+				fprintf(stderr, "Error: Unrecognized type '%c'.\n", receive_pdu.type);
+				exit_loop = 1; //Set exit_loop flag to true
+				break;
+			}
+		}
+}
+
 //Display menu options **DONE
 void display_menu(){
     //User input
@@ -321,7 +433,7 @@ int main(int argc, char **argv){
     char *host = "localhost";
     fd_set afds, rfds;
     struct SocketNode *registered_tcp_sockets = NULL, *add_tcp_sock;
-    char *requested_file;
+    char requested_file[11];
 
 
     //get host and port from command line
@@ -411,7 +523,6 @@ int main(int argc, char **argv){
                     break;
                 case 'S':
                     //recieve content download information
-                    printf("Requested filename (inside S type case): %s\n", requested_file); //testing
                     strncpy(temp_host, receive_pdu.data, 10);
                     temp_host[10] = '\0';
                     content_server_host = temp_host;
@@ -426,7 +537,6 @@ int main(int argc, char **argv){
                     //trigger download response from content server
                     //clear pdu char arrays
                     resetPDUs(&send_pdu, &receive_pdu);
-                    
 
                     //setup tcp port for content downloading
                     struct sockaddr_in reg_addr;
@@ -457,20 +567,19 @@ int main(int argc, char **argv){
 
                     //send requested file name to content server
                     send_pdu.type = 'D';
-                    printf("Sending download request for file %s.\n", requested_file); //testing
                     snprintf(send_pdu.data, 11, "%-10s", requested_file);
                     if (write(tcp_download_socket, &send_pdu.type, sizeof(send_pdu.type)) != sizeof(send_pdu.type)) {
                         error_exit("Failed to send PDU type");
                     }
-                    else{
-                        printf("Sent PDU type: %c.\n", send_pdu.type); //testing
-                    }
                     if (write(tcp_download_socket, &send_pdu.data, sizeof(send_pdu.data)) != sizeof(send_pdu.data)) {
                         error_exit("Failed to send PDU data");
                     }
-                    else{
-                        printf("Sent PDU data: %s.\n", send_pdu.data); //testing
-                    }
+
+                    //content downlaod
+                    content_download(tcp_download_socket, requested_file);
+                    // read(tcp_download_socket, &receive_pdu, 20);
+                    // printf("Received PDU type: %c\n", receive_pdu.type); //testing
+                    // printf("Received PDU data: %s\n", receive_pdu.data); //testing
 
                     break;
                 case 'C':
@@ -547,7 +656,7 @@ int main(int argc, char **argv){
                 resetPDUs(&send_pdu, &receive_pdu);
                 
                 //request download from another server
-                requested_file = request_download(&send_pdu, &udp_sock, &sin, alen);
+                request_download(&send_pdu, &udp_sock, &sin, alen, &requested_file);
                 printf("Requested file: %s\n", requested_file); //testing
 
                 break;
