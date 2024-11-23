@@ -74,40 +74,11 @@ int handle_client(int sd)
 
 	// Open the file
 	int fd = open(filename, O_RDONLY);
-	char error_check_byte;
+	//char error_check_byte;
 	if (fd < 0) {
-		perror("Failed to open file");
-		error_check_byte = '0';
-		if (write(sd, &error_check_byte, 1) != 1) {
-			perror("Failed to send error check byte");
-		}
-		close(sd);
-		return -1; // Ensure function returns an integer value
+		error_exit("Failed to open file");
 	}
 
-	error_check_byte = '1';
-	if (write(sd, &error_check_byte, 1) != 1) {
-		perror("Failed to send error check byte");
-		close(fd);
-		close(sd);
-		return -1; // Ensure function returns an integer value
-	}
-
-    // //testing
-    // memset(&send_pdu, 0, sizeof(send_pdu)); // Clear the struct
-    // send_pdu.type = 'C';
-    // snprintf(send_pdu.data, sizeof(send_pdu.data), "Hello, world!");
-
-    // ssize_t bytes_written = write(sd, &send_pdu, sizeof(send_pdu));
-    // if (bytes_written < 0) {
-    //     perror("Write error");
-    //     exit(EXIT_FAILURE);
-    // } else {
-    //     printf("\n");
-    //     printf("spdu type: %c\n", send_pdu.type);
-    //     printf("spdu data: %s\n", send_pdu.data);
-    // }
-    // //testing ^
     memset(&send_pdu, 0, sizeof(send_pdu)); // Clear the struct
 
     if(receive_pdu.type == 'D'){
@@ -157,59 +128,23 @@ int handle_client(int sd)
 }
 
 //Register file **DONE
-struct SocketNode* register_file(struct pdu *send_pdu, int *udp_sock, struct sockaddr_in *sin, int alen){
+struct SocketNode* register_file(char* fileinfo, struct SocketNode** registered_tcp_sockets){
     int tcp_port, tcp_sock;
-    char temp[20];
-    send_pdu->type = 'R'; 
 
     //setup tcp socket for each new file
     tcp_port = getsocketname(&tcp_sock);
     //printf("TCP port for content hosting: %d\n", tcp_port); //testing
 
-    //get peer name
-    while (1) {
-        printf("Enter the peer name you would like to assign to this file:\n");
-
-        if (fgets(temp, sizeof(temp), stdin) != NULL) {
-            temp[strcspn(temp, "\n")] = '\0';
-            if (strlen(temp) > 10) {
-                printf("Peer name is too long. Please enter a name with a maximum of 10 characters.\n");
-            } else {
-                snprintf(send_pdu->data, 11, "%-10s", temp);
-                break;
-            }
-        }
-    }
-
-    //get file name
-    while (1) {
-        printf("Enter the name of the file you would like to register:\n");
-        if (fgets(temp, sizeof(temp), stdin) != NULL) {
-            temp[strcspn(temp, "\n")] = '\0'; // Remove newline character
-            if (strlen(temp) > 10) {
-                printf("File name is too long. Please enter a name with a maximum of 10 characters.\n");
-            } 
-            else if (access(temp, F_OK) != 0) {
-                printf("File not found. Please enter a valid file name.\n");
-            } 
-            else {
-                snprintf(send_pdu->data + 10, 11, "%-10s", temp);
-                break;
-            }
-        }
-    }
-
-    //assign TCP port to send_pdu.data
-    snprintf(send_pdu->data + 20, 11, "%-10d", tcp_port);
-
 
     struct SocketNode *new_node = malloc(sizeof(struct SocketNode));
-    new_node->socket = tcp_sock;
-    strncpy(new_node->peer_name, send_pdu->data, 10);
+    strncpy(new_node->peer_name, fileinfo, 10);
     new_node->peer_name[10] = '\0';
-    strncpy(new_node->file_name, send_pdu->data + 10, 10);
+    strncpy(new_node->file_name, fileinfo + 10, 10);
     new_node->file_name[10] = '\0';
+    new_node->socket = tcp_sock;
     new_node->tcp_port = tcp_port;
+    new_node->next = *registered_tcp_sockets;
+    *registered_tcp_sockets = new_node;
     
     return new_node;
 }
@@ -223,12 +158,11 @@ void resetPDUs(struct pdu *send_pdu, struct pdu *receive_pdu){
 //request download from another server **DONE
 char * request_download(struct pdu *send_pdu, int *udp_sock, struct sockaddr_in *sin, int alen, char *requested_file){
     char temp[20];
-    //char requested_file[11];
     send_pdu->type = 'S';
 
     //get peer name
     while (1) {
-        printf("Enter the peer name:\n");
+        printf("Enter your peer name:\n");
 
         if (fgets(temp, sizeof(temp), stdin) != NULL) {
             temp[strcspn(temp, "\n")] = '\0';
@@ -346,7 +280,7 @@ char* deregister_file(struct SocketNode** registered_tcp_sockets, struct pdu *se
 //handle content download
 void content_download(int sd, char* requested_file){
     int i;
-    struct pdu receive_pdu;
+    struct pdu receive_pdu, send_pdu;
     char *filename = strtok(requested_file, " \n");
     
     // Open local file to write received content
@@ -358,23 +292,11 @@ void content_download(int sd, char* requested_file){
         sleep(3); //delay to allow client to transmit
         memset(&receive_pdu, 0, sizeof(receive_pdu)); // Clear the struct
 
-        char discard;
-        if (read(sd, &discard, 1) != 1) {  //discard junk byte
-            perror("Failed to read the first byte");
-            exit(EXIT_FAILURE);
-        }
-        printf("Discarded byte: %c\n", discard); //testing
-
 		int exit_loop = 0;
 		while (!exit_loop && (i = read(sd, &receive_pdu, sizeof(receive_pdu))) > 0) {
             printf("Bytes read: %d\n", i); //testing
             printf("Received PDU type: %c\n", receive_pdu.type); // testing
             printf("Received PDU data: %s\n", receive_pdu.data); // testing
-
-            struct pdu temp_rpdu;
-            temp_rpdu.type = receive_pdu.type;
-            memcpy(temp_rpdu.data, receive_pdu.data, i-1);
-            printf("rdpu data: %s\n", temp_rpdu.data); //testing
 
             size_t valid_data_length;
 			switch(receive_pdu.type){
@@ -407,6 +329,10 @@ void content_download(int sd, char* requested_file){
 				break;
 			}
 		}
+
+        // close file and socket
+        close(fd);
+        close(sd);
 }
 
 //Display menu options **DONE
@@ -575,11 +501,45 @@ int main(int argc, char **argv){
                         error_exit("Failed to send PDU data");
                     }
 
+                
                     //content downlaod
                     content_download(tcp_download_socket, requested_file);
-                    // read(tcp_download_socket, &receive_pdu, 20);
+
                     // printf("Received PDU type: %c\n", receive_pdu.type); //testing
                     // printf("Received PDU data: %s\n", receive_pdu.data); //testing
+
+                    //register new file with index server
+                    struct SocketNode* new_tcp_sock;
+                    char temp[20]; 
+                    memset(&send_pdu, 0, sizeof(send_pdu)); // Clear the struct
+                    send_pdu.type = 'R';
+
+                    //copy data to register file with index server
+                    while (1) {
+                        printf("Enter the peer name you would like to assign to this file:\n");
+
+                        if (fgets(temp, sizeof(temp), stdin) != NULL) {
+                            temp[strcspn(temp, "\n")] = '\0';
+                            if (strlen(temp) > 10) {
+                                printf("Peer name is too long. Please enter a name with a maximum of 10 characters.\n");
+                            } else {
+                                snprintf(send_pdu.data, 11, "%-10s", temp);
+                                break;
+                            }
+                        }
+                    }
+                    snprintf(send_pdu.data + 10, 11, "%-10s", requested_file);
+                    new_tcp_sock = register_file(send_pdu.data, &registered_tcp_sockets);
+                    snprintf(send_pdu.data + 20, 11, "%-10d", new_tcp_sock->tcp_port);
+
+                    printf("registering to index server: %s\n", send_pdu.data); //testing
+
+                    if (sendto(udp_sock, &send_pdu, sizeof(send_pdu), 0, (struct sockaddr*)&sin, alen) == -1) { 
+                        error_exit("Failed to send PDU");
+                    }
+                    else{
+                        printf("Sent registration request to index server.\n");
+                    }
 
                     break;
                 case 'C':
@@ -635,15 +595,51 @@ int main(int argc, char **argv){
             char option;
             option = getchar();
             while (getchar() != '\n');
+            char temp[20];
 
             switch(option){
             case 'R':
-                resetPDUs(&send_pdu, &receive_pdu);    
+                resetPDUs(&send_pdu, &receive_pdu);
+                
+                send_pdu.type = 'R';
+                
+                //get peer name
+                while (1) {
+                    printf("Enter the peer name you would like to assign to this file:\n");
+
+                    if (fgets(temp, sizeof(temp), stdin) != NULL) {
+                        temp[strcspn(temp, "\n")] = '\0';
+                        if (strlen(temp) > 10) {
+                            printf("Peer name is too long. Please enter a name with a maximum of 10 characters.\n");
+                        } else {
+                            snprintf(send_pdu.data, 11, "%-10s", temp);
+                            break;
+                        }
+                    }
+                }
+
+                //get file name
+                while (1) {
+                    printf("Enter the name of the file you would like to register:\n");
+                    if (fgets(temp, sizeof(temp), stdin) != NULL) {
+                        temp[strcspn(temp, "\n")] = '\0'; // Remove newline character
+                        if (strlen(temp) > 10) {
+                            printf("File name is too long. Please enter a name with a maximum of 10 characters.\n");
+                        } 
+                        else if (access(temp, F_OK) != 0) {
+                            printf("File not found. Please enter a valid file name.\n");
+                        } 
+                        else {
+                            snprintf(send_pdu.data + 10, 11, "%-10s", temp);
+                            break;
+                        }
+                    }
+                }  
                 
                 //get new tcp socket connection
-                add_tcp_sock = register_file(&send_pdu, &udp_sock, &sin, alen);
-                add_tcp_sock->next = registered_tcp_sockets; 
-                registered_tcp_sockets = add_tcp_sock; //add new tcp socket to registered sockets linked list
+                add_tcp_sock = register_file(send_pdu.data, &registered_tcp_sockets);
+                
+                snprintf(send_pdu.data + 20, 11, "%-10d", add_tcp_sock->tcp_port);
 
                 if (sendto(udp_sock, &send_pdu, sizeof(send_pdu), 0, (struct sockaddr*)&sin, alen) == -1) {
                    error_exit("Failed to send PDU");
