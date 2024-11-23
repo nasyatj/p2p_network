@@ -50,7 +50,7 @@ int getsocketname(int *sd){
     return ntohs(reg_addr.sin_port);
 }
 
-//handle client download (TCP) **IN PROGRESS
+//handle client download (TCP) **DONE
 int handle_client(int sd) 
 {
 	char	*bp;
@@ -58,7 +58,7 @@ int handle_client(int sd)
     struct pdu send_pdu, receive_pdu;
     FILE *file;
 
-    printf("Client connected, handling request...\n"); //testing
+    //printf("Client connected, handling request...\n"); //testing
 
 	// Read filename from the TCP connection
     n = read(sd, &receive_pdu, 20);
@@ -66,8 +66,8 @@ int handle_client(int sd)
         error_exit("Failed to read data from client");
     }
 
-    printf("Received PDU type: %c\n", receive_pdu.type); //testing
-    printf("Received PDU data: %s\n", receive_pdu.data); //testing
+    //printf("Received PDU type: %c\n", receive_pdu.type); //testing
+    //printf("Received PDU data: %s\n", receive_pdu.data); //testing
 
     char *filename = strtok(receive_pdu.data, " \n");
     printf("Valid data: %s\n", filename); //testing
@@ -84,39 +84,20 @@ int handle_client(int sd)
     if(receive_pdu.type == 'D'){
         printf("Client requested file: %s\n", filename); //testing
 
-        file = fopen(filename, "r");
-        if(file == NULL){
-            send_pdu.type = 'E';
-            snprintf(send_pdu.data, sizeof(send_pdu.data), "File not found");
-
-            if(write(sd, &send_pdu, sizeof(send_pdu)) != sizeof(send_pdu)){
-                error_exit("Failed to send file not found error");
-            }
+        //send pdu type
+        send_pdu.type = 'C';
+        if(write(sd, &send_pdu.type, sizeof(send_pdu.type)) != sizeof(send_pdu.type)){
+            error_exit("Failed to send pdu type");
         }
-        else{
-            while(1){
-                size_t bytes_read = fread(send_pdu.data, 1, MAX_DATA_SIZE, file);
-                send_pdu.type = 'C';
 
-                if(bytes_read < MAX_DATA_SIZE){
-                    if(feof(file)){
-                        //end of file, send last data batch
-                        printf("Sending final batch: %s\n", send_pdu.data); //testing
-                        send_pdu.type = 'F';
-
-                        write(sd, &send_pdu, sizeof(send_pdu));
-                    }
-                    break;
-                }
-                else if(bytes_read > 0){
-                    if(write(sd, &send_pdu, sizeof(send_pdu)) != sizeof(send_pdu)){
-                        error_exit("Failed to send file content");
-                    }
-                    printf("Sending data: %s\n", send_pdu.data); //testing
-                }
+        //send file content
+        while ((n = read(fd, send_pdu.data, sizeof(send_pdu.data))) > 0) {
+            if (write(sd, &send_pdu.data, n) != n) {
+                error_exit("Failed to send file content");
+                close(fd);
+                close(sd);
+                return -1;
             }
-            printf("Data sent\n");
-            fclose(file);    
         }
     }
 
@@ -277,7 +258,7 @@ char* deregister_file(struct SocketNode** registered_tcp_sockets, struct pdu *se
     return send_pdu->data;
 }
 
-//handle content download
+//handle content download **DONE
 void content_download(int sd, char* requested_file){
     int i;
     struct pdu receive_pdu, send_pdu;
@@ -292,43 +273,28 @@ void content_download(int sd, char* requested_file){
         sleep(3); //delay to allow client to transmit
         memset(&receive_pdu, 0, sizeof(receive_pdu)); // Clear the struct
 
-		int exit_loop = 0;
-		while (!exit_loop && (i = read(sd, &receive_pdu, sizeof(receive_pdu))) > 0) {
-            printf("Bytes read: %d\n", i); //testing
-            printf("Received PDU type: %c\n", receive_pdu.type); // testing
-            printf("Received PDU data: %s\n", receive_pdu.data); // testing
+        if (read(sd, &receive_pdu.type, 1) != 1) {
+            error_exit("Failed to read the PDU Type");
+        }
+        printf("Received PDU type: %c\n", receive_pdu.type); //testing
 
-            size_t valid_data_length;
-			switch(receive_pdu.type){
-			case 'E':
-				// Error
-				if (receive_pdu.data[0] == '\0') {
-					fprintf(stderr, "Error: File not found. File transfer failed.\n");
-				} else {
-					printf("Error message from server: %s\n", receive_pdu.data);
-				}
-				exit_loop = 1; //Set exit_loop flag to true
-				break;
-			case 'C':
-				// Write to file
-				printf("Receiving file data...\n"); //testing
-                valid_data_length = strlen(receive_pdu.data);
-				write(fd, receive_pdu.data, valid_data_length);
-				break;
-			case 'F':
-				// End of file. Write last batch
-                valid_data_length = strlen(receive_pdu.data);
-				printf("Final batch received...\n"); //testing
-				write(fd, receive_pdu.data, valid_data_length);
-				exit_loop = 1; //Set exit_loop flag to true
-				break;
-			default:
-				// Unrecognized type
-				fprintf(stderr, "Error: Unrecognized type '%c'.\n", receive_pdu.type);
-				exit_loop = 1; //Set exit_loop flag to true
-				break;
-			}
-		}
+        switch(receive_pdu.type){
+            case 'E':
+                //Error
+                if (read(sd, &receive_pdu.data, sizeof(receive_pdu.data)) != sizeof(receive_pdu.data)) {
+                    error_exit("Failed to read the PDU Data");
+                }
+                printf("Error message from server: %s\n", receive_pdu.data);
+                break;
+            case 'C':
+                //Receiving file content
+                printf("Receiving file content...\n");
+                while ((i = read(sd, receive_pdu.data, sizeof(receive_pdu.data))) > 0) {
+                    write(fd, receive_pdu.data, i);
+                }
+                break;
+        }
+        printf("File received and saved as %s\n", filename); //testing
 
         // close file and socket
         close(fd);
