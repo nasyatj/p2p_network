@@ -265,7 +265,7 @@ void content_download(int sd, char* requested_file){
     char *filename = strtok(requested_file, " \n");
     
     // Open local file to write received content
-		int fd = open("test.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644); //TESTING **CHANGE BACK TO FILENAME IN LAB ROOM
+		int fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644); 
 		if (fd < 0) {
 			error_exit("Failed to open file");
 		}
