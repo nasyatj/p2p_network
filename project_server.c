@@ -14,15 +14,15 @@
 #define MAX_DATA_SIZE 100
 
 /*------------------------------------------------------------------------
- * main - Iterative UDP server for index service
+ * main - File download server
  *------------------------------------------------------------------------
  */
 struct pdu {
-		char type;
-		char data[MAX_DATA_SIZE];
+	char type;
+	char data[MAX_DATA_SIZE];
 };  
 
-struct file_info { // Also keep track of how many times the file has been sent and send the least sent for load balancing
+struct file_info { // Also track how many times the file has been sent for load balancing
     char filename[MAX_DATA_SIZE];
     char peer_name[MAX_DATA_SIZE];
     struct sockaddr_in host_address;
@@ -179,6 +179,7 @@ void print_file_info_list(int sock, struct node *head, struct sockaddr_in *clien
     }
 }
 
+// Free each fileinfo node in the linked list
 void free_file_info_list(struct node *head) {
     struct node *current = head;
     struct node *next;
@@ -359,4 +360,5 @@ int main(int argc, char *argv[])
 		}
 	}
 	free_file_info_list(file_info_list);
+	close(s);
 }
